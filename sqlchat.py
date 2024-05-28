@@ -38,11 +38,13 @@ def main():
     st.write("Chat with crunchbase data.")
     
     # Add customization options to the sidebar
-    st.sidebar.title('Available data (only from 2022):')
+    st.sidebar.title('Available data (only from 2024):')
     st.sidebar.write('Investors: uuid, name, type')
     st.sidebar.write('Organizations: organization_uuid, name, country_code, state_code, status, category_list, founded_on')
     st.sidebar.write('Funding_rounds: funding_round_uuid, investment_type, announced_on, raised_amount_usd, investor_count, target_org_uuid, target_org_name, lead_investor_uuids')
     st.sidebar.write('Investments: investment_uuid, funding_round_uuid, investor_uuid, investor_type, is_lead_investor')
+    st.sidebar.write('Example 1: list of investors and their deal count for 2024 with more than 10 deals')
+    st.sidebar.write('Example 2: investor with more investments in 2024')
     message = st.text_input("Ask the database?:",on_change=f_preguntar,key = "userq")
 
     if message:
