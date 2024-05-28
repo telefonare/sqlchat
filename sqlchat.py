@@ -38,38 +38,12 @@ def main():
     st.write("Chat with crunchbase data.")
     
     # Add customization options to the sidebar
-    st.sidebar.title('Customization')
-    consultante = st.sidebar.text_input("Nombre del consultante:")
-    fecha_cons = st.sidebar.date_input("Fecha de Nacimiento:", value="default_value_today", format ="DD/MM/YYYY",min_value=pd.to_datetime("1930-01-01", format="%Y-%m-%d"))
-    hora_cons = st.sidebar.time_input("Hora de nacimiento:", value="now")
-    lugar = st.sidebar.selectbox(
-        'Lugar',
-        ['Buenos Aires']
-    )
-
-    if consultante:
-       st.session_state.consultante = consultante
-
-    if fecha_cons:
-        st.session_state.fecha_cons = fecha_cons
-    #conversational_memory_length = st.sidebar.slider('Conversational memory length:', 1, 10, value = 5)
-
-    #memory = ConversationBufferWindowMemory(k=conversational_memory_length, memory_key="chat_history", return_messages=True)
-    message = None
-    if 'userq' in st.session_state:
-        print("#2")
-        message = st.session_state.userq
-        st.session_state.userq = ""
-
-
-
-
-    print("#3",type(fecha_cons))
-    user_question = st.text_input("Que quieres preguntar?:",on_change=f_preguntar,key = "userq")
-    #print("#4",user_question)
-    #message = user_question
-    
-
+    st.sidebar.title('Available data (only from 2022):')
+    st.sidebar.write('Investors: uuid, name, type')
+    st.sidebar.write('Organizations: organization_uuid, name, country_code, state_code, status, category_list, founded_on')
+    st.sidebar.write('Funding_rounds: funding_round_uuid, investment_type, announced_on, raised_amount_usd, investor_count, target_org_uuid, target_org_name, lead_investor_uuids')
+    st.sidebar.write('Investments: investment_uuid, funding_round_uuid, investor_uuid, investor_type, is_lead_investor')
+    message = st.text_input("Ask the database?:",on_change=f_preguntar,key = "userq")
 
     if message:
         
@@ -77,27 +51,27 @@ def main():
             'role': 'user',
             'content': message
             }
+        st.session_state.chat_history=[]
         st.session_state.chat_history.append(message_data)
         #st.session_state.chat_history.append(message)
 
-        # Create a kerykeion instance:
-        # Args: Name, year, month, day, hour, minuts, city, nation(optional)
-        anio = fecha_cons.year
-        mes = fecha_cons.month
-        dia = fecha_cons.day
-        hora = hora_cons.hour
-        minutos = hora_cons.minute
-        print("#6",anio,mes,dia,hora,minutos)
+
         #print(result)
         messages = [
-    {"role": "system", "content": f"""You are an agent that can answer business question using data available in a database.
-You can access the databasae generatin sql
+    {"role": "system", "content": f"""You are an agent that can generate sql code for sqlite 3 to answer a given question in the context of the following data schema which is a simplified version of the crunchbase financial information:
+
+table 'investors' (every investor): ['investor_uuid', 'name', 'type'] (PK: investor_uuid)
+table 'organizations' (every target organization): ['organization_uuid', 'name', 'country_code', 'state_code', 'status', 'category_list', 'founded_on'] (PK: organization_uuid)
+table 'funding_rounds' (a group of investments, a header for each deal): ['funding_round_uuid', 'investment_type', 'announced_on', 'raised_amount_usd', 'investor_count', 'target_org_uuid', 'target_org_name', 'lead_investor_uuids'] (PK: funding_round_uuid, FK: target_org_uuid on organizations.organization_uuid)
+table 'investments' (detail of each funding_round, one line per investor in a funding round): ['investment_uuid', 'funding_round_uuid', 'investor_uuid', 'investor_type', 'is_lead_investor'] (PK: investment_uuid) (FK: funding_round_uuid on funding_rounds.funding_round_uuid) (FK: investor_uuid on investors.funding_round_uuid)
+
+considerations: use investor(name) only in like clauses or comparing strings as parameters, do not use in other cases like filtering with other tables.
+Answer only with sql code. No comments, no introductions, no explanations, only sqlcode!
     """},
  
         ]
-        for i,msg in enumerate(st.session_state.chat_history):
-            print("#35",type(msg),msg)
-            messages.append(msg)
+
+        messages.append(message_data)
 
         print("#76")
         #st.title("####2")
@@ -110,13 +84,62 @@ You can access the databasae generatin sql
             # 32,768 tokens shared between prompt and completion.
             max_tokens=1024,
         )
+        
 
         print("#77", type(chat_completion.choices[0].message),chat_completion.choices[0].message.content)
+        cur = conn.cursor()
+        query = chat_completion.choices[0].message.content.replace('```', '')
+        st.write(query)
+        cur.execute(query)
+        resultados = cur.fetchall()
+
+        dbres = ""
+        for fila in resultados:
+            st.write(fila)
+            dbres += str(fila)
+        print("#33 ",query,dbres)
+
+        messages = [
+    {"role": "system", "content": f"""You are an assistan that answers financial questions based on crunchbase public data, a query and the answer to the query.
+Your objective is to take all those elements and elaborate a valid answer to the final user.
+
+The data schema:
+
+table 'investors' (every investor): ['investor_uuid', 'name', 'type'] (PK: investor_uuid)
+table 'organizations' (every target organization): ['organization_uuid', 'name', 'country_code', 'state_code', 'status', 'category_list', 'founded_on'] (PK: organization_uuid)
+table 'funding_rounds' (a group of investments, a header for each deal): ['funding_round_uuid', 'investment_type', 'announced_on', 'raised_amount_usd', 'investor_count', 'target_org_uuid', 'target_org_name', 'lead_investor_uuids'] (PK: funding_round_uuid, FK: target_org_uuid on organizations.organization_uuid)
+table 'investments' (detail of each funding_round, one line per investor in a funding round): ['investment_uuid', 'funding_round_uuid', 'investor_uuid', 'investor_type', 'is_lead_investor'] (PK: investment_uuid) (FK: funding_round_uuid on funding_rounds.funding_round_uuid) (FK: investor_uuid on investors.funding_round_uuid)
+
+the query used:
+{query}
+
+the answer from the query:
+{dbres}
+    """},
+ 
+        ]
+        
+        
+        messages.append(message_data)
+
+        chat_completion = client.chat.completions.create(
+            messages=messages,
+            model="llama3-70b-8192",
+            temperature=0.9,
+
+            # The maximum number of tokens to generate. Requests can use up to
+            # 32,768 tokens shared between prompt and completion.
+            max_tokens=1024,
+        )
+        
+            
         message_data = {
             'role': 'assistant',
             'content': chat_completion.choices[0].message.content
             }
         st.session_state.chat_history.append(message_data)
+        st.write(chat_completion.choices[0].message.content)
+        
         
     # session state variable
     if 'chat_history' not in st.session_state:
@@ -124,21 +147,9 @@ You can access the databasae generatin sql
     else:
         for message in st.session_state.chat_history:
             print("#78", message)
-            st.write(f"{message['role']}: {message['content']}" )
-
-    # Crear un cursor
-    cur = conn.cursor()
-
-    # Ejecutar una consulta SQL
-    cur.execute("SELECT * FROM ipos LIMIT 5")
+            #st.write(f"{message['role']}: {message['content']}" )
 
 
-    # Obtener los resultados
-    resultados = cur.fetchall()
-
-    # Imprimir los resultados
-    for fila in resultados:
-        st.write(fila)
 
     # No olvides cerrar la conexión cuando hayas terminado
     conn.close()
